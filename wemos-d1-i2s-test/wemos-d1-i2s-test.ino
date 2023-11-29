@@ -75,7 +75,7 @@ setup()
   pinMode(I2SI_DATA, INPUT);
 
   // WiFi.forceSleepBegin();
-  delay(500);
+  // delay(500);
 
   Serial.begin(115200);
 
@@ -97,8 +97,9 @@ loop()
         Serial.println("");
 #else
         value = convert(i2s_slc_buf_pntr[rx_buf_idx][x]);
-        sprintf(withScale, "-1 %f 1", (float)value / 4096.0f);
-        Serial.println(withScale);
+        // sprintf(withScale, "-1 %f 1", (float)value / 4096.0f);
+        // Serial.println(withScale);
+        Serial.println(value * -1);
 #endif
       }
     }
