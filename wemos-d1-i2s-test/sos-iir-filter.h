@@ -82,7 +82,7 @@ struct SOS_Delay_State {
 //   "  retw.n                 \n"
 // );
 
-int sos_filter_f32(float *input, float *output, int len, const SOS_Coefficients &coeffs, SOS_Delay_State &w) {
+void sos_filter_f32(float *input, float *output, int len, const SOS_Coefficients &coeffs, SOS_Delay_State &w) {
   // Assumes a0 and b0 coefficients are one (1.0)
   //
   // float* a2 = input;
@@ -111,7 +111,6 @@ int sos_filter_f32(float *input, float *output, int len, const SOS_Coefficients 
   }
   w.w0 = f4;
   w.w1 = f5;
-  return 0;
 };
 
 // extern "C" {
@@ -197,7 +196,8 @@ float sos_filter_sum_sqr_f32(float *input, float *output, int len, const SOS_Coe
   }
   w.w0 = f4;
   w.w1 = f5;
-  return sum_sqr;
+  Serial.printf("sum_sqr: %u\n", sum_sqr);
+  return sum_sqr; // TODO - resolves to 0 ????
 };
 
 

@@ -11,97 +11,13 @@
 #include "sos-iir-filter.h"
 #include "math.h"
 
-extern "C" {
+// extern "C" {
 #include "user_interface.h"
 #include "i2s_reg.h"
 #include "slc_register.h"
 #include "esp8266_peri.h"
-  void rom_i2c_writeReg_Mask(int, int, int, int, int, int);
-}
-
-// #define DEBUG
-
-#define I2S_CLK_FREQ 160000000  // Hz
-#define I2S_24BIT 3             // I2S 24 bit half data
-#define I2S_LEFT 2              // I2S RX Left channel
-
-#define I2SI_DATA 12  // I2S data on GPIO12
-#define I2SI_BCK 13   // I2S clk on GPIO13
-#define I2SI_WS 14    // I2S select on GPIO14
-
-#define SLC_BUF_CNT 8   // Number of buffers in the I2S circular buffer
-#define SLC_BUF_LEN 64  // Length of one buffer, in 32-bit words.
-
-/**
- * Convert I2S data.
- * Data is 18 bit signed, MSBit first, two's complement.
- * Note: We can only send 31 cycles from ESP8266 so we only
- * shift by 13 instead of 14.
- * The 240200 is a magic calibration number I haven't figured
- * out yet.
- */
-#define convert(sample) (((int32_t)(sample) >> 13) - 240200)
-
-typedef struct {
-  uint32_t blocksize : 12;
-  uint32_t datalen : 12;
-  uint32_t unused : 5;
-  uint32_t sub_sof : 1;
-  uint32_t eof : 1;
-  volatile uint32_t owner : 1;
-
-  uint32_t *buf_ptr;
-  uint32_t *next_link_ptr;
-} sdio_queue_t;
-
-// Data we push to 'samples_queue'
-struct sum_queue_t {
-  // Sum of squares of mic samples, after Equalizer filter
-  float sum_sqr_SPL;
-  // Sum of squares of weighted mic samples
-  float sum_sqr_weighted;
-  // Debug only, FreeRTOS ticks we spent processing the I2S data
-  uint32_t proc_ticks;
-};
-
-static sdio_queue_t i2s_slc_items[SLC_BUF_CNT];  // I2S DMA buffer descriptors
-static uint32_t *i2s_slc_buf_pntr[SLC_BUF_CNT];  // Pointer to the I2S DMA buffer data
-static volatile uint32_t rx_buf_cnt = 0;
-static volatile uint32_t rx_buf_idx = 0;
-static volatile bool rx_buf_flag = false;
-
-#define LEQ_PERIOD 1           // second(s)
-#define WEIGHTING A_weighting  // Also avaliable: 'C_weighting' or 'None' (Z_weighting)
-#define LEQ_UNITS "LAeq"       // customize based on above weighting used
-#define DB_UNITS "dBA"         // customize based on above weighting used
-#define USE_DISPLAY 0          // Use display (1) or don't (0)
-
-// NOTE: Some microphones require at least DC-Blocker filter
-#define MIC_EQUALIZER SPH0645LM4H_B_RB  // See below for defined IIR filters or set to 'None' to disable
-#define MIC_OFFSET_DB 3.0103            // Default offset (sine-wave RMS vs. dBFS). Modify this value for linear calibration
-
-// Customize these values from microphone datasheet
-#define MIC_SENSITIVITY -26    // dBFS value expected at MIC_REF_DB (Sensitivity value from datasheet)
-#define MIC_REF_DB 94.0        // Value at which point sensitivity is specified in datasheet (dB)
-#define MIC_OVERLOAD_DB 120.0  // dB - Acoustic overload point
-#define MIC_NOISE_DB 29        // dB - Noise floor
-#define MIC_BITS 24            // valid number of bits in I2S data
-#define MIC_CONVERT(s) (s >> (SAMPLE_BITS - MIC_BITS))
-#define MIC_TIMING_SHIFT 0  // Set to one to fix MSB timing for some microphones, i.e. SPH0645LM4H-x
-
-//
-// Sampling
-//
-#define SAMPLE_RATE 48000  // Hz, fixed to design of IIR filters
-#define SAMPLE_BITS 32     // bits
-#define SAMPLE_T int32_t
-#define SAMPLES_SHORT (SAMPLE_RATE / 8)  // ~125ms
-#define SAMPLES_LEQ (SAMPLE_RATE * LEQ_PERIOD)
-#define DMA_BANK_SIZE (SAMPLES_SHORT / 16)
-#define DMA_BANKS 32
-
-// Calculate reference amplitude value at compile time
-constexpr double MIC_REF_AMPL = pow(10, double(MIC_SENSITIVITY) / 20) * ((1 << (MIC_BITS - 1)) - 1);
+void rom_i2c_writeReg_Mask(int, int, int, int, int, int);
+// }
 
 //
 // IIR Filters
@@ -214,6 +130,89 @@ SOS_IIR_Filter C_weighting = {
     { -2.0000000000000000, +1.0000000000000000, +0.3775800047420818, -0.0356365756680430 } }
 };
 
+// #define DEBUG
+
+#define I2S_CLK_FREQ 160000000  // Hz
+#define I2S_24BIT 3             // I2S 24 bit half data
+#define I2S_LEFT 2              // I2S RX Left channel
+
+#define I2SI_DATA 12  // I2S data on GPIO12
+#define I2SI_BCK 13   // I2S clk on GPIO13
+#define I2SI_WS 14    // I2S select on GPIO14
+
+#define SLC_BUF_CNT 8   // Number of buffers in the I2S circular buffer
+#define SLC_BUF_LEN 64  // Length of one buffer, in 32-bit words.
+
+#define LEQ_PERIOD 1           // second(s)
+#define WEIGHTING A_weighting  // Also avaliable: 'C_weighting' or 'None' (Z_weighting)
+#define LEQ_UNITS "LAeq"       // customize based on above weighting used
+#define DB_UNITS "dBA"         // customize based on above weighting used
+
+// NOTE: Some microphones require at least DC-Blocker filter
+#define MIC_EQUALIZER SPH0645LM4H_B_RB  // See below for defined IIR filters or set to 'None' to disable
+#define MIC_OFFSET_DB 3.0103            // Default offset (sine-wave RMS vs. dBFS). Modify this value for linear calibration
+
+// Customize these values from microphone datasheet
+#define MIC_SENSITIVITY -26    // dBFS value expected at MIC_REF_DB (Sensitivity value from datasheet)
+#define MIC_REF_DB 94.0        // Value at which point sensitivity is specified in datasheet (dB)
+#define MIC_OVERLOAD_DB 120.0  // dB - Acoustic overload point
+#define MIC_NOISE_DB 29        // dB - Noise floor
+#define MIC_BITS 24            // valid number of bits in I2S data
+#define SAMPLE_BITS 32         // bits
+#define MIC_CONVERT(s) (s >> (SAMPLE_BITS - MIC_BITS))
+#define MIC_TIMING_SHIFT 0  // Set to one to fix MSB timing for some microphones, i.e. SPH0645LM4H-x
+
+//
+// Sampling
+//
+#define SAMPLE_RATE 48000  // Hz, fixed to design of IIR filters
+// #define SAMPLE_T int32_t
+// #define SAMPLES_SHORT (SAMPLE_RATE / 8)  // ~125ms
+// #define SAMPLES_LEQ (SAMPLE_RATE * LEQ_PERIOD)
+// #define DMA_BANK_SIZE (SAMPLES_SHORT / 16)
+// #define DMA_BANKS 32
+
+/**
+ * Convert I2S data.
+ * Data is 18 bit signed, MSBit first, two's complement.
+ * Note: We can only send 31 cycles from ESP8266 so we only
+ * shift by 13 instead of 14.
+ * The 240200 is a magic calibration number I haven't figured
+ * out yet.
+ */
+// #define convert(sample) (((int32_t)(sample) >> 13) - 240200)
+
+typedef struct {
+  uint32_t blocksize : 12;
+  uint32_t datalen : 12;
+  uint32_t unused : 5;
+  uint32_t sub_sof : 1;
+  uint32_t eof : 1;
+  volatile uint32_t owner : 1;
+
+  uint32_t *buf_ptr;
+  uint32_t *next_link_ptr;
+} sdio_queue_t;
+
+// Data we push to 'samples_queue'
+struct sum_queue_t {
+  // Sum of squares of mic samples, after Equalizer filter
+  float sum_sqr_SPL;
+  // Sum of squares of weighted mic samples
+  float sum_sqr_weighted;
+  // Debug only, FreeRTOS ticks we spent processing the I2S data
+  uint32_t proc_ticks;
+};
+
+static sdio_queue_t i2s_slc_items[SLC_BUF_CNT];  // I2S DMA buffer descriptors
+static uint32_t *i2s_slc_buf_pntr[SLC_BUF_CNT];  // Pointer to the I2S DMA buffer data
+static volatile uint32_t rx_buf_cnt = 0;
+static volatile uint32_t rx_buf_idx = 0;
+static volatile bool rx_buf_flag = false;
+
+// Calculate reference amplitude value at compile time
+constexpr double MIC_REF_AMPL = pow(10, double(MIC_SENSITIVITY) / 20) * ((1 << (MIC_BITS - 1)) - 1);
+
 #if (MIC_TIMING_SHIFT > 0)
 // Undocumented (?!) manipulation of I2S peripheral registers
 // to fix MSB timing issues with some I2S microphones
@@ -248,6 +247,7 @@ void setup() {
   // delay(500);
 
   Serial.begin(115200);
+  delay(500);
 
   slc_init();
   i2s_init();
@@ -272,7 +272,7 @@ void loop() {
         // value = i2s_slc_buf_pntr[rx_buf_idx][x];
       }
     }
-    sum_queue_t q;
+    // sum_queue_t q;
     // Apply equalization and calculate Z-weighted sum of squares,
     // writes filtered samples back to the same buffer.
     q.sum_sqr_SPL = MIC_EQUALIZER.filter(samples, samples, SLC_BUF_LEN);
@@ -282,7 +282,7 @@ void loop() {
 
     double rmssqr = double(q.sum_sqr_SPL) / SLC_BUF_LEN;
     double short_RMS = sqrt(rmssqr);
-    double short_SPL_dB = MIC_OFFSET_DB + MIC_REF_DB + 20 * log10(short_RMS / MIC_REF_AMPL); // TODO - Resolves to NaN ????
+    double short_SPL_dB = MIC_OFFSET_DB + MIC_REF_DB + 20 * log10(short_RMS / MIC_REF_AMPL);  // TODO - Resolves to NaN ????
 
     // In case of acoustic overload or below noise floor measurement, report infinty Leq value
     if (short_SPL_dB > MIC_OVERLOAD_DB) {
@@ -293,7 +293,7 @@ void loop() {
 
     // Accumulate Leq sum
     Leq_sum_sqr += q.sum_sqr_weighted;
-    Leq_samples += SAMPLES_SHORT;
+    Leq_samples += SLC_BUF_LEN;
 
 
     // When we gather enough samples, calculate new Leq value
@@ -304,7 +304,7 @@ void loop() {
       Leq_samples = 0;
 
       // Serial output, customize (or remove) as needed
-      Serial.printf("%.1f\n", Leq_dB);
+      // Serial.printf("%.1f\n", Leq_dB);
 
       rx_buf_flag = false;
     }
