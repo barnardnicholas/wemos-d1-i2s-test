@@ -1,8 +1,17 @@
 # Wemos D1 Mini - I2s Microphone Tests
 
-Original repo: https://github.com/joextodd/listener
+## Original repo:
 
-Microphone: SPH0645
+https://github.com/joextodd/listener
+
+## Sources:
+
+https://github.com/joextodd/listener
+https://github.com/barnardnicholas/esp32-i2s-slm
+
+## Microphone:
+
+SPH0645
 
 ## Connections:
 
