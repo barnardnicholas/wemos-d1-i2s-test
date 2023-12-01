@@ -21,5 +21,5 @@ SPH0645
 | BCLK | D7    |
 | DOUT | D6    |
 | LRCL | D5    |
-| SEL  | N/C   |
+| SEL  | GND   |
 | 3V   | 3V    |
