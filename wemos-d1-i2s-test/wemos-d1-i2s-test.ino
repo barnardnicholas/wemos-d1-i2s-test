@@ -14,21 +14,21 @@ extern "C" {
 #include "i2s_reg.h"
 #include "slc_register.h"
 #include "esp8266_peri.h"
-void rom_i2c_writeReg_Mask(int, int, int, int, int, int);
+  void rom_i2c_writeReg_Mask(int, int, int, int, int, int);
 }
 
 // #define DEBUG
 
-#define I2S_CLK_FREQ      160000000  // Hz
-#define I2S_24BIT         3     // I2S 24 bit half data
-#define I2S_LEFT          2     // I2S RX Left channel
+#define I2S_CLK_FREQ 160000000  // Hz
+#define I2S_24BIT 3             // I2S 24 bit half data
+#define I2S_LEFT 2              // I2S RX Left channel
 
-#define I2SI_DATA         12    // I2S data on GPIO12
-#define I2SI_BCK          13    // I2S clk on GPIO13
-#define I2SI_WS           14    // I2S select on GPIO14
+#define I2SI_DATA 12  // I2S data on GPIO12
+#define I2SI_BCK 13   // I2S clk on GPIO13
+#define I2SI_WS 14    // I2S select on GPIO14
 
-#define SLC_BUF_CNT       8     // Number of buffers in the I2S circular buffer
-#define SLC_BUF_LEN       64    // Length of one buffer, in 32-bit words.
+#define SLC_BUF_CNT 8   // Number of buffers in the I2S circular buffer
+#define SLC_BUF_LEN 64  // Length of one buffer, in 32-bit words.
 
 /**
  * Convert I2S data.
@@ -41,11 +41,11 @@ void rom_i2c_writeReg_Mask(int, int, int, int, int, int);
 #define convert(sample) (((int32_t)(sample) >> 13) - 240200)
 
 typedef struct {
-  uint32_t blocksize      : 12;
-  uint32_t datalen        : 12;
-  uint32_t unused         : 5;
-  uint32_t sub_sof        : 1;
-  uint32_t eof            : 1;
+  uint32_t blocksize : 12;
+  uint32_t datalen : 12;
+  uint32_t unused : 5;
+  uint32_t sub_sof : 1;
+  uint32_t eof : 1;
   volatile uint32_t owner : 1;
 
   uint32_t *buf_ptr;
@@ -63,10 +63,10 @@ void slc_init();
 void i2s_set_rate(uint32_t rate);
 void slc_isr(void *para);
 
+float readoutMaxScale = 30000;
+
 /* Main -----------------------------------------------------------------------*/
-void
-setup()
-{
+void setup() {
   Serial.println("START");
   rx_buf_cnt = 0;
 
@@ -83,9 +83,7 @@ setup()
   i2s_init();
 }
 
-void
-loop()
-{
+void loop() {
   int32_t value;
   char withScale[256];
 
@@ -97,9 +95,15 @@ loop()
         Serial.println("");
 #else
         value = convert(i2s_slc_buf_pntr[rx_buf_idx][x]);
+        // value = i2s_slc_buf_pntr[rx_buf_idx][x];
         // sprintf(withScale, "-1 %f 1", (float)value / 4096.0f);
         // Serial.println(withScale);
-        Serial.println(value * -1);
+
+        Serial.print(readoutMaxScale * -1);  // To freeze the lower limit
+        Serial.print(" ");
+        Serial.print(readoutMaxScale);  // To freeze the upper limit
+        Serial.print(" ");
+        Serial.println(value);
 #endif
       }
     }
@@ -112,9 +116,7 @@ loop()
 /**
  * Initialise I2S as a RX master.
  */
-void
-i2s_init()
-{
+void i2s_init() {
   // Config RX pin function
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U, FUNC_I2SI_DATA);
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U, FUNC_I2SI_BCK);
@@ -154,15 +156,13 @@ i2s_init()
  * I2S bits mode only has space for 15 extra bits,
  * 31 in total. The
  */
-void
-i2s_set_rate(uint32_t rate)
-{
+void i2s_set_rate(uint32_t rate) {
   uint32_t i2s_clock_div = (I2S_CLK_FREQ / (rate * 31 * 2)) & I2SCDM;
   uint32_t i2s_bck_div = (I2S_CLK_FREQ / (rate * i2s_clock_div * 31 * 2)) & I2SBDM;
 
 #ifdef DEBUG
   Serial.printf("Rate %u Div %u Bck %u Freq %u\n",
-  rate, i2s_clock_div, i2s_bck_div, I2S_CLK_FREQ / (i2s_clock_div * i2s_bck_div * 31 * 2));
+                rate, i2s_clock_div, i2s_bck_div, I2S_CLK_FREQ / (i2s_clock_div * i2s_bck_div * 31 * 2));
 #endif
 
   // RX master mode, RX MSB shift, right first, msb right
@@ -175,9 +175,7 @@ i2s_set_rate(uint32_t rate)
  * Counter intuitively, we use the TXLINK here to
  * receive data.
  */
-void
-slc_init()
-{
+void slc_init() {
   for (int x = 0; x < SLC_BUF_CNT; x++) {
     i2s_slc_buf_pntr[x] = (uint32_t *)malloc(SLC_BUF_LEN * 4);
     for (int y = 0; y < SLC_BUF_LEN; y++) i2s_slc_buf_pntr[x][y] = 0;
@@ -199,9 +197,9 @@ slc_init()
   SLCIC = 0xFFFFFFFF;
 
   // Configure DMA
-  SLCC0 &= ~(SLCMM << SLCM);      // Clear DMA MODE
-  SLCC0 |= (1 << SLCM);           // Set DMA MODE to 1
-  SLCRXDC |= SLCBINR | SLCBTNR;   // Enable INFOR_NO_REPLACE and TOKEN_NO_REPLACE
+  SLCC0 &= ~(SLCMM << SLCM);     // Clear DMA MODE
+  SLCC0 |= (1 << SLCM);          // Set DMA MODE to 1
+  SLCRXDC |= SLCBINR | SLCBTNR;  // Enable INFOR_NO_REPLACE and TOKEN_NO_REPLACE
 
   // Feed DMA the 1st buffer desc addr
   SLCTXL &= ~(SLCTXLAM << SLCTXLA);
@@ -222,8 +220,7 @@ slc_init()
  * to one of the buffers.
  */
 void ICACHE_RAM_ATTR
-slc_isr(void *para)
-{
+slc_isr(void *para) {
   uint32_t status;
 
   status = SLCIS;
@@ -236,7 +233,7 @@ slc_isr(void *para)
   if (status & SLCITXEOF) {
     // We have received a frame
     ETS_SLC_INTR_DISABLE();
-    sdio_queue_t *finished = (sdio_queue_t*)SLCTXEDA;
+    sdio_queue_t *finished = (sdio_queue_t *)SLCTXEDA;
 
     finished->eof = 0;
     finished->owner = 1;
@@ -252,4 +249,3 @@ slc_isr(void *para)
     ETS_SLC_INTR_ENABLE();
   }
 }
-
