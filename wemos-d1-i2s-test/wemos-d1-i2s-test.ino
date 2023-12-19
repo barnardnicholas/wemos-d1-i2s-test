@@ -8,6 +8,7 @@
  *
   ******************************************************************************/
 // #include <ESP8266WiFi.h>
+#include "sos-iir-filter.h"
 
 extern "C" {
 #include "user_interface.h"
