@@ -17,8 +17,6 @@ extern "C" {
   void rom_i2c_writeReg_Mask(int, int, int, int, int, int);
 }
 
-// #define DEBUG
-
 #define I2S_CLK_FREQ 160000000  // Hz
 #define I2S_24BIT 3             // I2S 24 bit half data
 #define I2S_LEFT 2              // I2S RX Left channel
@@ -94,16 +92,17 @@ void loop() {
         Serial.print(i2s_slc_buf_pntr[rx_buf_idx][x], BIN);
         Serial.println("");
 #else
+        Serial.println(value);
         value = convert(i2s_slc_buf_pntr[rx_buf_idx][x]);
         // value = i2s_slc_buf_pntr[rx_buf_idx][x];
         // sprintf(withScale, "-1 %f 1", (float)value / 4096.0f);
         // Serial.println(withScale);
 
-        Serial.print(readoutMaxScale * -1);  // To freeze the lower limit
-        Serial.print(" ");
-        Serial.print(readoutMaxScale);  // To freeze the upper limit
-        Serial.print(" ");
-        Serial.println(value);
+        // Serial.print(readoutMaxScale * -1);  // To freeze the lower limit
+        // Serial.print(" ");
+        // Serial.print(readoutMaxScale);  // To freeze the upper limit
+        // Serial.print(" ");
+        // Serial.println(value);
 #endif
       }
     }
