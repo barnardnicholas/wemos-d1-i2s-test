@@ -63,6 +63,8 @@ void i2s_set_rate(uint32_t rate);
 void slc_isr(void *para);
 
 float readoutMaxScale = 30000;
+float avgReading[1000];
+uint32_t noOfSamples = 0;
 
 /* Main -----------------------------------------------------------------------*/
 void setup() {
@@ -89,22 +91,38 @@ void loop() {
   if (rx_buf_flag) {
     for (int x = 0; x < SLC_BUF_LEN; x++) {
       if (i2s_slc_buf_pntr[rx_buf_idx][x] > 0) {
-#ifdef DEBUG
-        Serial.print(i2s_slc_buf_pntr[rx_buf_idx][x], BIN);
-        Serial.println("");
-#else
-        Serial.println(value);
+
+        // Serial.println(i2s_slc_buf_pntr[rx_buf_idx][x]);
+        // 1968000000 at ambient room volume - Gets lower with SPL
+        // ESP32: ~-250000000 at ambient room volume - increases with SPL
         value = convert(i2s_slc_buf_pntr[rx_buf_idx][x]);
+        avgReading[noOfSamples] = value;
+        noOfSamples++;
+
+        float runningAvg = 0;
+        if (noOfSamples >= 1000) {
+          for (int i = 0; i < noOfSamples; i++) {
+            runningAvg += avgReading[i];
+          }
+          runningAvg /= noOfSamples;
+          noOfSamples = 0;
+
+          // Serial.print(readoutMaxScale * -1);  // To freeze the lower limit
+          // Serial.print(" ");
+          // Serial.print(readoutMaxScale);  // To freeze the upper limit
+          // Serial.print(" ");
+          // Serial.println(runningAvg);
+        }
+
         // value = i2s_slc_buf_pntr[rx_buf_idx][x];
         // sprintf(withScale, "-1 %f 1", (float)value / 4096.0f);
         // Serial.println(withScale);
 
-        // Serial.print(readoutMaxScale * -1);  // To freeze the lower limit
-        // Serial.print(" ");
-        // Serial.print(readoutMaxScale);  // To freeze the upper limit
-        // Serial.print(" ");
-        // Serial.println(value);
-#endif
+        Serial.print(readoutMaxScale * -1);  // To freeze the lower limit
+        Serial.print(" ");
+        Serial.print(readoutMaxScale);  // To freeze the upper limit
+        Serial.print(" ");
+        Serial.println(value);
       }
     }
     rx_buf_flag = false;
@@ -115,49 +133,62 @@ void loop() {
 
 /**
  * Initialise I2S as a RX master.
+ * This function initializes the I2S (Inter-IC Sound) interface on the ESP8266.
  */
 void i2s_init() {
   // Config RX pin function
+  // Configuring Pin Functions: The function configures the pin functions for the I2S interface by selecting the appropriate functionality for GPIO pins using PIN_FUNC_SELECT.
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U, FUNC_I2SI_DATA);
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U, FUNC_I2SI_BCK);
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTMS_U, FUNC_I2SI_WS);
 
+  // Clock and Reset Configuration: It enables a 160MHz clock for the I2S interface, resets the I2S interface, and configures the DMA (Direct Memory Access) controller for I2S.
   // Enable a 160MHz clock
   I2S_CLK_ENABLE();
-
   // Reset I2S
   I2SC &= ~(I2SRST);
   I2SC |= I2SRST;
   I2SC &= ~(I2SRST);
 
   // Reset DMA
+  // DMA Configuration: The function sets up the DMA for I2S, enabling it and specifying the data format (24-bit) for receiving data.
   I2SFC &= ~(I2SDE | (I2SRXFMM << I2SRXFM));
-
   // Enable DMA
   I2SFC |= I2SDE | (I2S_24BIT << I2SRXFM);
 
+  // Channel Configuration: It configures the I2S channel for single-channel reception (left channel).
   // Set RX single channel (left)
   I2SCC &= ~((I2STXCMM << I2STXCM) | (I2SRXCMM << I2SRXCM));
   I2SCC |= (I2S_LEFT << I2SRXCM);
+
+  // Sample Rate Configuration: Calls the i2s_set_rate function to set the sample rate. The default value used here is 16667 Hz.
   i2s_set_rate(16667);
 
+  // Data Length Configuration: Sets the length of data to be received by specifying I2SRXEN to SLC_BUF_LEN (defined as 64).
   // Set RX data to be received
   I2SRXEN = SLC_BUF_LEN;
+
+  // Bits Mode Configuration: Specifies the number of bits per sample in the I2S data. It sets the bits mode to 15 bits.
 
   // Bits mode
   I2SC |= (15 << I2SBM);
 
+  // Start Receiver: Initiates the I2S receiver operation by setting the I2SRXS bit.
   // Start receiver
   I2SC |= I2SRXS;
 }
 
 /**
  * Set I2S clock.
+ * This function sets the I2S clock rate based on the desired sample rate.
  * I2S bits mode only has space for 15 extra bits,
- * 31 in total. The
+ * 31 in total.
  */
 void i2s_set_rate(uint32_t rate) {
+  // Clock Division Calculation: Calculates the values for I2S clock division based on the desired sample rate.
   uint32_t i2s_clock_div = (I2S_CLK_FREQ / (rate * 31 * 2)) & I2SCDM;
+
+  // Configuration Settings: Configures the I2S control register (I2SC) with the calculated clock division values.
   uint32_t i2s_bck_div = (I2S_CLK_FREQ / (rate * i2s_clock_div * 31 * 2)) & I2SBDM;
 
 #ifdef DEBUG
@@ -174,8 +205,10 @@ void i2s_set_rate(uint32_t rate) {
  * Initialize the SLC module for DMA operation.
  * Counter intuitively, we use the TXLINK here to
  * receive data.
+ * This function initializes the Serial Link Controller (SLC) module for DMA (Direct Memory Access) operation.
  */
 void slc_init() {
+  // Memory Allocation and Initialization: Allocates memory for buffer pointers and initializes buffer data.
   for (int x = 0; x < SLC_BUF_CNT; x++) {
     i2s_slc_buf_pntr[x] = (uint32_t *)malloc(SLC_BUF_LEN * 4);
     for (int y = 0; y < SLC_BUF_LEN; y++) i2s_slc_buf_pntr[x][y] = 0;
@@ -191,12 +224,14 @@ void slc_init() {
   }
 
   // Reset DMA
+  // DMA Reset: Disables SLC interrupts, resets DMA related registers, and clears interrupt status.
   ETS_SLC_INTR_DISABLE();
   SLCC0 |= SLCRXLR | SLCTXLR;
   SLCC0 &= ~(SLCRXLR | SLCTXLR);
   SLCIC = 0xFFFFFFFF;
 
   // Configure DMA
+  // DMA Configuration: Configures the DMA mode and enables specific DMA features.
   SLCC0 &= ~(SLCMM << SLCM);     // Clear DMA MODE
   SLCC0 |= (1 << SLCM);          // Set DMA MODE to 1
   SLCRXDC |= SLCBINR | SLCBTNR;  // Enable INFOR_NO_REPLACE and TOKEN_NO_REPLACE
@@ -205,6 +240,7 @@ void slc_init() {
   SLCTXL &= ~(SLCTXLAM << SLCTXLA);
   SLCTXL |= (uint32_t)&i2s_slc_items[0] << SLCTXLA;
 
+  // Interrupt Configuration: Attaches the SLC interrupt service routine (slc_isr) and enables the End of Frame (EOF) interrupt.
   ETS_SLC_INTR_ATTACH(slc_isr, NULL);
 
   // Enable EOF interrupt
@@ -212,15 +248,18 @@ void slc_init() {
   ETS_SLC_INTR_ENABLE();
 
   // Start transmission
+  // Transmission Start: Initiates DMA transmission by setting the SLCTXLS bit.
   SLCTXL |= SLCTXLS;
 }
 
 /**
  * Triggered when SLC has finished writing
  * to one of the buffers.
+ * This function is the Interrupt Service Routine (ISR) for the SLC module. It is triggered when the SLC has finished writing to one of the buffers.
  */
 void ICACHE_RAM_ATTR
 slc_isr(void *para) {
+  // Interrupt Handling: Reads and clears the interrupt status register.
   uint32_t status;
 
   status = SLCIS;
@@ -230,11 +269,13 @@ slc_isr(void *para) {
     return;
   }
 
+  // EOF Check: Checks if the interrupt is an End of Frame (EOF) interrupt.
   if (status & SLCITXEOF) {
     // We have received a frame
     ETS_SLC_INTR_DISABLE();
     sdio_queue_t *finished = (sdio_queue_t *)SLCTXEDA;
 
+    // Buffer Handling: Updates buffer-related information, flags, and enables/dis
     finished->eof = 0;
     finished->owner = 1;
     finished->datalen = 0;
