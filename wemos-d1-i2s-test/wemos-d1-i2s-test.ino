@@ -63,8 +63,6 @@ void i2s_set_rate(uint32_t rate);
 void slc_isr(void *para);
 
 float readoutMaxScale = 30000;
-float avgReading[1000];
-uint32_t noOfSamples = 0;
 
 /* Main -----------------------------------------------------------------------*/
 void setup() {
@@ -96,22 +94,6 @@ void loop() {
         // 1968000000 at ambient room volume - Gets lower with SPL
         // ESP32: ~-250000000 at ambient room volume - increases with SPL
         value = convert(i2s_slc_buf_pntr[rx_buf_idx][x]);
-        avgReading[noOfSamples] = value;
-        noOfSamples++;
-
-        float runningAvg = 0;
-        if (noOfSamples >= 1000) {
-          for (int i = 0; i < noOfSamples; i++) {
-            runningAvg += avgReading[i];
-          }
-          runningAvg /= noOfSamples;
-          noOfSamples = 0;
-
-          // Serial.print(readoutMaxScale * -1);  // To freeze the lower limit
-          // Serial.print(" ");
-          // Serial.print(readoutMaxScale);  // To freeze the upper limit
-          // Serial.print(" ");
-          // Serial.println(runningAvg);
         }
 
         // value = i2s_slc_buf_pntr[rx_buf_idx][x];
